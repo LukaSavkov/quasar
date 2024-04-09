@@ -11,6 +11,7 @@ import (
 	"github.com/jtomic1/config-schema-service/internal/services"
 	pb "github.com/jtomic1/config-schema-service/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 func main() {
@@ -29,6 +30,7 @@ func main() {
 	configSchemaServer := configschema.NewServer(authorizer, administrator)
 
 	pb.RegisterConfigSchemaServiceServer(grpcServer, configSchemaServer)
+	reflection.Register(grpcServer)
 
 	log.Printf("Server listening at %v", lis.Addr())
 	if err := grpcServer.Serve(lis); err != nil {
