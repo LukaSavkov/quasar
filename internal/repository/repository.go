@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -16,7 +17,7 @@ import (
 )
 
 var (
-	endpoint = "localhost:2379"
+	endpoint = os.Getenv("ETCD_ADDRESS")
 	timeout  = 5 * time.Second
 )
 
@@ -38,7 +39,7 @@ func (repo *EtcdRepository) Close() {
 	repo.client.Close()
 }
 
-func (repo *EtcdRepository) SaveConfigSchema(key string, user *pb.User, schema string) error {
+func (repo *EtcdRepository) SaveConfigSchema(key string, schema string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	res, err := repo.client.Get(ctx, key)
@@ -53,7 +54,6 @@ func (repo *EtcdRepository) SaveConfigSchema(key string, user *pb.User, schema s
 		return err
 	}
 	schemaData := &pb.ConfigSchemaData{
-		User:         user,
 		Schema:       string(schemaJson),
 		CreationTime: timestamppb.New(time.Now()),
 	}
@@ -146,8 +146,8 @@ func (repo *EtcdRepository) GetLatestVersionByPrefix(prefix string) (string, err
 func getSchemaDetailsFromKey(key string) *pb.ConfigSchemaDetails {
 	tokens := strings.Split(key, "/")
 	return &pb.ConfigSchemaDetails{
-		Namespace:  tokens[0],
-		SchemaName: tokens[1],
-		Version:    tokens[2],
+		Organization: tokens[0],
+		SchemaName:   tokens[1],
+		Version:      tokens[2],
 	}
 }

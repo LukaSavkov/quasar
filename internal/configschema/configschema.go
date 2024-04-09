@@ -2,38 +2,52 @@ package configschema
 
 import (
 	"context"
+	"fmt"
+	"log"
 
+	oortapi "github.com/c12s/oort/pkg/api"
 	"github.com/jtomic1/config-schema-service/internal/repository"
+	"github.com/jtomic1/config-schema-service/internal/services"
 	"github.com/jtomic1/config-schema-service/internal/validators"
 	pb "github.com/jtomic1/config-schema-service/proto"
 	"github.com/xeipuuv/gojsonschema"
 	"golang.org/x/mod/semver"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"sigs.k8s.io/yaml"
 )
 
 type Server struct {
 	pb.UnimplementedConfigSchemaServiceServer
+	authorizer    *services.AuthZService
+	administrator *oortapi.AdministrationAsyncClient
 }
 
 type ConfigSchemaRequest interface {
-	GetNamespace() string
+	GetOrganization() string
 	GetSchemaName() string
 	GetVersion() string
 }
 
-func NewServer() *Server {
-	return &Server{}
+func NewServer(authorizer *services.AuthZService, administrator *oortapi.AdministrationAsyncClient) *Server {
+	return &Server{
+		authorizer:    authorizer,
+		administrator: administrator,
+	}
 }
 
 func getConfigSchemaKey(req ConfigSchemaRequest) string {
-	return req.GetNamespace() + "/" + req.GetSchemaName() + "/" + req.GetVersion()
+	return req.GetOrganization() + "/" + req.GetSchemaName() + "/" + req.GetVersion()
 }
 
 func getConfigSchemaPrefix(req ConfigSchemaRequest) string {
-	return req.GetNamespace() + "/" + req.GetSchemaName()
+	return req.GetOrganization() + "/" + req.GetSchemaName()
 }
 
 func (s *Server) SaveConfigSchema(ctx context.Context, in *pb.SaveConfigSchemaRequest) (*pb.SaveConfigSchemaResponse, error) {
+	if !s.authorizer.Authorize(ctx, services.PermSchemaPut, services.OortResOrg, in.SchemaDetails.Organization) {
+		return nil, fmt.Errorf("permission denied: %s", services.PermSchemaPut)
+	}
 	_, err := validators.IsSaveSchemaRequestValid(in)
 	if err != nil {
 		return &pb.SaveConfigSchemaResponse{
@@ -42,13 +56,14 @@ func (s *Server) SaveConfigSchema(ctx context.Context, in *pb.SaveConfigSchemaRe
 		}, nil
 	}
 	repoClient, err := repository.NewClient()
-	defer repoClient.Close()
 	if err != nil {
 		return &pb.SaveConfigSchemaResponse{
 			Status:  13,
 			Message: "Error while instantiating database client!",
 		}, nil
 	}
+	defer repoClient.Close()
+
 	latestVersion, err := repoClient.GetLatestVersionByPrefix(getConfigSchemaPrefix(in.GetSchemaDetails()))
 	if err != nil {
 		return &pb.SaveConfigSchemaResponse{
@@ -62,12 +77,27 @@ func (s *Server) SaveConfigSchema(ctx context.Context, in *pb.SaveConfigSchemaRe
 			Message: "Provided version is not latest! Please provide a version that succeeds '" + latestVersion + "'!",
 		}, nil
 	}
-	err = repoClient.SaveConfigSchema(getConfigSchemaKey(in.GetSchemaDetails()), in.GetUser(), in.GetSchema())
+	err = repoClient.SaveConfigSchema(getConfigSchemaKey(in.GetSchemaDetails()), in.GetSchema())
 	if err != nil {
 		return &pb.SaveConfigSchemaResponse{
 			Status:  13,
 			Message: err.Error(),
 		}, nil
+	}
+	err = s.administrator.SendRequest(&oortapi.CreateInheritanceRelReq{
+		From: &oortapi.Resource{
+			Id:   in.SchemaDetails.Organization,
+			Kind: services.OortResOrg,
+		},
+		To: &oortapi.Resource{
+			Id:   services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.SchemaName, in.SchemaDetails.Version),
+			Kind: services.OortResSchema,
+		},
+	}, func(resp *oortapi.AdministrationAsyncResp) {
+		log.Println(resp.Error)
+	})
+	if err != nil {
+		log.Println(err)
 	}
 	return &pb.SaveConfigSchemaResponse{
 		Status:  0,
@@ -76,6 +106,10 @@ func (s *Server) SaveConfigSchema(ctx context.Context, in *pb.SaveConfigSchemaRe
 }
 
 func (s *Server) GetConfigSchema(ctx context.Context, in *pb.GetConfigSchemaRequest) (*pb.GetConfigSchemaResponse, error) {
+	oortSchemaId := services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.SchemaName, in.SchemaDetails.Version)
+	if !s.authorizer.Authorize(ctx, services.PermSchemaGet, services.OortResSchema, oortSchemaId) {
+		return nil, fmt.Errorf("permission denied: %s", services.PermSchemaGet)
+	}
 	_, err := validators.IsGetSchemaRequestValid(in)
 	if err != nil {
 		return &pb.GetConfigSchemaResponse{
@@ -85,7 +119,6 @@ func (s *Server) GetConfigSchema(ctx context.Context, in *pb.GetConfigSchemaRequ
 		}, nil
 	}
 	repoClient, err := repository.NewClient()
-	defer repoClient.Close()
 	if err != nil {
 		return &pb.GetConfigSchemaResponse{
 			Status:     13,
@@ -93,6 +126,8 @@ func (s *Server) GetConfigSchema(ctx context.Context, in *pb.GetConfigSchemaRequ
 			SchemaData: nil,
 		}, nil
 	}
+	defer repoClient.Close()
+
 	key := getConfigSchemaKey(in.GetSchemaDetails())
 	schemaData, err := repoClient.GetConfigSchema(key)
 	if err != nil {
@@ -116,6 +151,10 @@ func (s *Server) GetConfigSchema(ctx context.Context, in *pb.GetConfigSchemaRequ
 }
 
 func (s *Server) DeleteConfigSchema(ctx context.Context, in *pb.DeleteConfigSchemaRequest) (*pb.DeleteConfigSchemaResponse, error) {
+	oortSchemaId := services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.SchemaName, in.SchemaDetails.Version)
+	if !s.authorizer.Authorize(ctx, services.PermSchemaDel, services.OortResSchema, oortSchemaId) {
+		return nil, fmt.Errorf("permission denied: %s", services.PermSchemaDel)
+	}
 	_, err := validators.IsDeleteSchemaRequestValid(in)
 	if err != nil {
 		return &pb.DeleteConfigSchemaResponse{
@@ -124,13 +163,14 @@ func (s *Server) DeleteConfigSchema(ctx context.Context, in *pb.DeleteConfigSche
 		}, nil
 	}
 	repoClient, err := repository.NewClient()
-	defer repoClient.Close()
 	if err != nil {
 		return &pb.DeleteConfigSchemaResponse{
 			Status:  13,
 			Message: "Error while instantiating database client!",
 		}, nil
 	}
+	defer repoClient.Close()
+
 	if err := repoClient.DeleteConfigSchema(getConfigSchemaKey(in.GetSchemaDetails())); err != nil {
 		return &pb.DeleteConfigSchemaResponse{
 			Status:  3,
@@ -145,6 +185,10 @@ func (s *Server) DeleteConfigSchema(ctx context.Context, in *pb.DeleteConfigSche
 }
 
 func (s *Server) ValidateConfiguration(ctx context.Context, in *pb.ValidateConfigurationRequest) (*pb.ValidateConfigurationResponse, error) {
+	oortSchemaId := services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.SchemaName, in.SchemaDetails.Version)
+	if !s.authorizer.Authorize(ctx, services.PermSchemaGet, services.OortResSchema, oortSchemaId) {
+		return nil, fmt.Errorf("permission denied: %s", services.PermSchemaGet)
+	}
 	isValid, err := validators.IsValidateConfigurationRequestValid(in)
 	if err != nil {
 		return &pb.ValidateConfigurationResponse{
@@ -154,7 +198,6 @@ func (s *Server) ValidateConfiguration(ctx context.Context, in *pb.ValidateConfi
 		}, nil
 	}
 	repoClient, err := repository.NewClient()
-	defer repoClient.Close()
 	if err != nil {
 		return &pb.ValidateConfigurationResponse{
 			Status:  13,
@@ -162,6 +205,8 @@ func (s *Server) ValidateConfiguration(ctx context.Context, in *pb.ValidateConfi
 			IsValid: false,
 		}, nil
 	}
+	defer repoClient.Close()
+
 	key := getConfigSchemaKey(in.GetSchemaDetails())
 	schemaData, err := repoClient.GetConfigSchema(key)
 	if err != nil {
@@ -219,6 +264,9 @@ func validateConfiguration(configuration string, schema string) (*gojsonschema.R
 }
 
 func (s *Server) GetConfigSchemaVersions(ctx context.Context, in *pb.ConfigSchemaVersionsRequest) (*pb.ConfigSchemaVersionsResponse, error) {
+	if !s.authorizer.Authorize(ctx, services.PermSchemaGet, services.OortResOrg, in.SchemaDetails.Organization) {
+		return nil, fmt.Errorf("permission denied: %s", services.PermSchemaGet)
+	}
 	_, err := validators.IsGetConfigSchemaVersionsValid(in)
 	if err != nil {
 		return &pb.ConfigSchemaVersionsResponse{
@@ -227,13 +275,14 @@ func (s *Server) GetConfigSchemaVersions(ctx context.Context, in *pb.ConfigSchem
 		}, nil
 	}
 	repoClient, err := repository.NewClient()
-	defer repoClient.Close()
 	if err != nil {
 		return &pb.ConfigSchemaVersionsResponse{
 			Status:  13,
 			Message: "Error while instantiating database client!",
 		}, nil
 	}
+	defer repoClient.Close()
+
 	key := getConfigSchemaPrefix(in.GetSchemaDetails())
 	schemaVersions, err := repoClient.GetSchemasByPrefix(key)
 	if err != nil {
@@ -253,4 +302,14 @@ func (s *Server) GetConfigSchemaVersions(ctx context.Context, in *pb.ConfigSchem
 		Message:        message,
 		SchemaVersions: schemaVersions,
 	}, nil
+}
+
+func GetAuthInterceptor() func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if ok && len(md.Get("authz-token")) > 0 {
+			ctx = context.WithValue(ctx, "authz-token", md.Get("authz-token")[0])
+		}
+		return handler(ctx, req)
+	}
 }
