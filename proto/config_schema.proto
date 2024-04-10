@@ -14,21 +14,15 @@ service ConfigSchemaService {
   rpc GetConfigSchemaVersions(ConfigSchemaVersionsRequest) returns (ConfigSchemaVersionsResponse);
 }
 
-message User {
-  string username = 1;
-  string email = 2;
-}
-
 message ConfigSchemaDetails {
-  string namespace = 1;
-  string schema_name = 2;
-  string version = 3;
+  string schema_name = 1;
+  string version = 2;
+  string organization = 3;
 }
 
 message ConfigSchemaData {
-  User user = 1;
-  string schema = 2;
-  google.protobuf.Timestamp creation_time = 3;
+  string schema = 1;
+  google.protobuf.Timestamp creation_time = 2;
 }
 
 message ConfigSchema {
@@ -37,9 +31,8 @@ message ConfigSchema {
 }
 
 message SaveConfigSchemaRequest {
-  User user = 1;
-  ConfigSchemaDetails schema_details = 2;
-  string schema = 3;
+  ConfigSchemaDetails schema_details = 1;
+  string schema = 2;
 }
 
 message SaveConfigSchemaResponse {
@@ -48,8 +41,7 @@ message SaveConfigSchemaResponse {
 }
 
 message DeleteConfigSchemaRequest { 
-  User user = 1;
-  ConfigSchemaDetails schema_details = 2;
+  ConfigSchemaDetails schema_details = 1;
 }
 
 message DeleteConfigSchemaResponse {
@@ -58,8 +50,7 @@ message DeleteConfigSchemaResponse {
 }
 
 message GetConfigSchemaRequest {
-  User user = 1;
-  ConfigSchemaDetails schema_details = 2;
+  ConfigSchemaDetails schema_details = 1;
 }
 
 message GetConfigSchemaResponse  {
@@ -69,9 +60,8 @@ message GetConfigSchemaResponse  {
 }
 
 message ValidateConfigurationRequest {
-  User user = 1;
-  ConfigSchemaDetails schema_details  = 2;
-  string configuration = 3;
+  ConfigSchemaDetails schema_details  = 1;
+  string configuration = 2;
 }
 
 message ValidateConfigurationResponse {
@@ -81,8 +71,7 @@ message ValidateConfigurationResponse {
 }
 
 message ConfigSchemaVersionsRequest {
-  User user = 1;
-  ConfigSchemaDetails schema_details = 2;
+  ConfigSchemaDetails schema_details = 1;
 }
 
 message ConfigSchemaVersionsResponse {

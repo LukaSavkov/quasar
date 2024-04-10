@@ -10,20 +10,9 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func IsUserValid(user *pb.User) (bool, error) {
-	if user == nil {
-		return false, errors.New("User cannot be empty!")
-	} else if user.Email == "" {
-		return false, errors.New("User's email cannot be empty!")
-	} else if user.Username == "" {
-		return false, errors.New("User's username cannot be empty!")
-	}
-	return true, nil
-}
-
 func IsSchemaValid(schema string) (bool, error) {
 	if schema == "" {
-		return false, errors.New("Schema cannot be empty!")
+		return false, errors.New("schema cannot be empty")
 	}
 	schemaJson, err := yaml.YAMLToJSON([]byte(schema))
 	if err != nil {
@@ -39,33 +28,27 @@ func IsSchemaValid(schema string) (bool, error) {
 
 func IsConfigurationValid(configuration string) (bool, error) {
 	if configuration == "" {
-		return false, errors.New("Configuration cannot be empty!")
+		return false, errors.New("configuration cannot be empty")
 	}
 	return true, nil
 }
 
 func AreSchemaDetailsValid(schemaDetails *pb.ConfigSchemaDetails, isVersionRequired bool) (bool, error) {
 	if schemaDetails == nil {
-		return false, errors.New("Schema details cannot be empty!")
-	} else if schemaDetails.GetNamespace() == "" {
-		return false, errors.New("Schema namespace cannot be empty!")
+		return false, errors.New("schema details cannot be empty")
 	} else if schemaDetails.GetSchemaName() == "" {
-		return false, errors.New("Schema name cannot be empty!")
+		return false, errors.New("schema name cannot be empty")
 	} else if isVersionRequired && schemaDetails.GetVersion() == "" {
-		return false, errors.New("Schema version cannot be empty!")
+		return false, errors.New("schema version cannot be empty")
 	} else if isVersionRequired && !semver.IsValid(schemaDetails.GetVersion()) {
-		return false, errors.New("Schema version must be a valid SemVer string with 'v' prefix!")
-	} else if strings.Contains(schemaDetails.GetNamespace(), "/") || strings.Contains(schemaDetails.GetSchemaName(), "/") || strings.Contains(schemaDetails.GetVersion(), "/") {
-		return false, errors.New("Schema details must not contain '/'!")
+		return false, errors.New("schema version must be a valid SemVer string with 'v' prefix")
+	} else if strings.Contains(schemaDetails.GetSchemaName(), "/") || strings.Contains(schemaDetails.GetVersion(), "/") {
+		return false, errors.New("schema details must not contain '/'")
 	}
 	return true, nil
 }
 
 func IsSaveSchemaRequestValid(saveRequest *pb.SaveConfigSchemaRequest) (bool, error) {
-	userValid, userErr := IsUserValid(saveRequest.GetUser())
-	if userErr != nil {
-		return false, userErr
-	}
 	schemaDetailsValid, schemaDetailsErr := AreSchemaDetailsValid(saveRequest.GetSchemaDetails(), true)
 	if schemaDetailsErr != nil {
 		return false, schemaDetailsErr
@@ -74,43 +57,27 @@ func IsSaveSchemaRequestValid(saveRequest *pb.SaveConfigSchemaRequest) (bool, er
 	if schemaErr != nil {
 		return false, schemaErr
 	}
-	requestValid := userValid && schemaDetailsValid && schemaValid
+	requestValid := schemaDetailsValid && schemaValid
 	return requestValid, nil
 }
 
 func IsGetSchemaRequestValid(getRequest *pb.GetConfigSchemaRequest) (bool, error) {
-	userValid, userErr := IsUserValid(getRequest.GetUser())
-	if userErr != nil {
-		return false, userErr
-	}
 	schemaDetailsValid, schemaDetailsErr := AreSchemaDetailsValid(getRequest.GetSchemaDetails(), true)
 	if schemaDetailsErr != nil {
 		return false, schemaDetailsErr
 	}
-
-	requestValid := userValid && schemaDetailsValid
-	return requestValid, nil
+	return schemaDetailsValid, nil
 }
 
 func IsDeleteSchemaRequestValid(deleteRequest *pb.DeleteConfigSchemaRequest) (bool, error) {
-	userValid, userErr := IsUserValid(deleteRequest.GetUser())
-	if userErr != nil {
-		return false, userErr
-	}
 	schemaDetailsValid, schemaDetailsErr := AreSchemaDetailsValid(deleteRequest.GetSchemaDetails(), true)
 	if schemaDetailsErr != nil {
 		return false, schemaDetailsErr
 	}
-
-	requestValid := userValid && schemaDetailsValid
-	return requestValid, nil
+	return schemaDetailsValid, nil
 }
 
 func IsValidateConfigurationRequestValid(validateRequest *pb.ValidateConfigurationRequest) (bool, error) {
-	userValid, userErr := IsUserValid(validateRequest.GetUser())
-	if userErr != nil {
-		return false, userErr
-	}
 	schemaDetailsValid, schemaDetailsErr := AreSchemaDetailsValid(validateRequest.GetSchemaDetails(), true)
 	if schemaDetailsErr != nil {
 		return false, schemaDetailsErr
@@ -119,20 +86,14 @@ func IsValidateConfigurationRequestValid(validateRequest *pb.ValidateConfigurati
 	if configurationErr != nil {
 		return false, configurationErr
 	}
-	requestValid := userValid && schemaDetailsValid && configurationValid
+	requestValid := schemaDetailsValid && configurationValid
 	return requestValid, nil
 }
 
 func IsGetConfigSchemaVersionsValid(versionsRequest *pb.ConfigSchemaVersionsRequest) (bool, error) {
-	userValid, userErr := IsUserValid(versionsRequest.GetUser())
-	if userErr != nil {
-		return false, userErr
-	}
 	schemaDetailsValid, schemaDetailsErr := AreSchemaDetailsValid(versionsRequest.GetSchemaDetails(), false)
 	if schemaDetailsErr != nil {
 		return false, schemaDetailsErr
 	}
-
-	requestValid := userValid && schemaDetailsValid
-	return requestValid, nil
+	return schemaDetailsValid, nil
 }
