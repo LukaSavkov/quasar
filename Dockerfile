@@ -8,7 +8,6 @@ WORKDIR /app
 COPY ./quasar/go.mod ./quasar/go.sum ./
 
 # Copy the local dependency
-COPY ./magnetar ../magnetar
 COPY ./oort ../oort
 
 # Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed
