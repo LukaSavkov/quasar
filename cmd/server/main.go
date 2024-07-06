@@ -6,11 +6,13 @@ import (
 	"net"
 	"os"
 
+	meridian_api "github.com/c12s/meridian/pkg/api"
 	oortapi "github.com/c12s/oort/pkg/api"
 	"github.com/jtomic1/config-schema-service/internal/configschema"
 	"github.com/jtomic1/config-schema-service/internal/services"
 	pb "github.com/jtomic1/config-schema-service/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -27,7 +29,12 @@ func main() {
 		log.Fatalln(err)
 	}
 	authorizer := services.NewAuthZService(os.Getenv("SECRET_KEY"))
-	configSchemaServer := configschema.NewServer(authorizer, administrator)
+	conn, err := grpc.NewClient(os.Getenv("MERIDIAN_ADDRESS"), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalln(err)
+	}
+	meridian := meridian_api.NewMeridianClient(conn)
+	configSchemaServer := configschema.NewServer(authorizer, administrator, meridian)
 
 	pb.RegisterConfigSchemaServiceServer(grpcServer, configSchemaServer)
 	reflection.Register(grpcServer)

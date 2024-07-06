@@ -147,7 +147,8 @@ func getSchemaDetailsFromKey(key string) *pb.ConfigSchemaDetails {
 	tokens := strings.Split(key, "/")
 	return &pb.ConfigSchemaDetails{
 		Organization: tokens[0],
-		SchemaName:   tokens[1],
-		Version:      tokens[2],
+		Namespace:    tokens[1],
+		SchemaName:   tokens[2],
+		Version:      tokens[3],
 	}
 }
