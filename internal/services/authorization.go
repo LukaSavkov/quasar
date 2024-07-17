@@ -16,12 +16,13 @@ const (
 )
 
 const (
-	OortResOrg    = "org"
-	OortResSchema = "schema"
+	OortResOrg       = "org"
+	OortResSchema    = "schema"
+	OortResNamespace = "namespace"
 )
 
-func OortSchemaId(org, name, version string) string {
-	return fmt.Sprintf("%s/%s/%s", org, name, version)
+func OortSchemaId(org, namespace, name, version string) string {
+	return fmt.Sprintf("%s/%s/%s/%s", org, namespace, name, version)
 }
 
 type AuthZService struct {

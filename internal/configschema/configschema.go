@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	meridian_api "github.com/c12s/meridian/pkg/api"
 	oortapi "github.com/c12s/oort/pkg/api"
 	"github.com/jtomic1/config-schema-service/internal/repository"
 	"github.com/jtomic1/config-schema-service/internal/services"
@@ -21,34 +22,44 @@ type Server struct {
 	pb.UnimplementedConfigSchemaServiceServer
 	authorizer    *services.AuthZService
 	administrator *oortapi.AdministrationAsyncClient
+	meridian      meridian_api.MeridianClient
 }
 
 type ConfigSchemaRequest interface {
 	GetOrganization() string
 	GetSchemaName() string
 	GetVersion() string
+	GetNamespace() string
 }
 
-func NewServer(authorizer *services.AuthZService, administrator *oortapi.AdministrationAsyncClient) *Server {
+func NewServer(authorizer *services.AuthZService, administrator *oortapi.AdministrationAsyncClient, meridian meridian_api.MeridianClient) *Server {
 	return &Server{
 		authorizer:    authorizer,
 		administrator: administrator,
+		meridian:      meridian,
 	}
 }
 
 func getConfigSchemaKey(req ConfigSchemaRequest) string {
-	return req.GetOrganization() + "/" + req.GetSchemaName() + "/" + req.GetVersion()
+	return req.GetOrganization() + "/" + req.GetNamespace() + "/" + req.GetSchemaName() + "/" + req.GetVersion()
 }
 
 func getConfigSchemaPrefix(req ConfigSchemaRequest) string {
-	return req.GetOrganization() + "/" + req.GetSchemaName()
+	return req.GetOrganization() + "/" + req.GetNamespace() + "/" + req.GetSchemaName()
 }
 
 func (s *Server) SaveConfigSchema(ctx context.Context, in *pb.SaveConfigSchemaRequest) (*pb.SaveConfigSchemaResponse, error) {
-	if !s.authorizer.Authorize(ctx, services.PermSchemaPut, services.OortResOrg, in.SchemaDetails.Organization) {
+	_, err := s.meridian.GetNamespace(ctx, &meridian_api.GetNamespaceReq{
+		OrgId: in.SchemaDetails.Organization,
+		Name:  in.SchemaDetails.Namespace,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !s.authorizer.Authorize(ctx, services.PermSchemaPut, services.OortResNamespace, fmt.Sprintf("%s/%s", in.SchemaDetails.Organization, in.SchemaDetails.Namespace)) {
 		return nil, fmt.Errorf("permission denied: %s", services.PermSchemaPut)
 	}
-	_, err := validators.IsSaveSchemaRequestValid(in)
+	_, err = validators.IsSaveSchemaRequestValid(in)
 	if err != nil {
 		return &pb.SaveConfigSchemaResponse{
 			Status:  3,
@@ -90,7 +101,7 @@ func (s *Server) SaveConfigSchema(ctx context.Context, in *pb.SaveConfigSchemaRe
 			Kind: services.OortResOrg,
 		},
 		To: &oortapi.Resource{
-			Id:   services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.SchemaName, in.SchemaDetails.Version),
+			Id:   services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.Namespace, in.SchemaDetails.SchemaName, in.SchemaDetails.Version),
 			Kind: services.OortResSchema,
 		},
 	}, func(resp *oortapi.AdministrationAsyncResp) {
@@ -106,7 +117,7 @@ func (s *Server) SaveConfigSchema(ctx context.Context, in *pb.SaveConfigSchemaRe
 }
 
 func (s *Server) GetConfigSchema(ctx context.Context, in *pb.GetConfigSchemaRequest) (*pb.GetConfigSchemaResponse, error) {
-	oortSchemaId := services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.SchemaName, in.SchemaDetails.Version)
+	oortSchemaId := services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.Namespace, in.SchemaDetails.SchemaName, in.SchemaDetails.Version)
 	if !s.authorizer.Authorize(ctx, services.PermSchemaGet, services.OortResSchema, oortSchemaId) {
 		return nil, fmt.Errorf("permission denied: %s", services.PermSchemaGet)
 	}
@@ -151,7 +162,7 @@ func (s *Server) GetConfigSchema(ctx context.Context, in *pb.GetConfigSchemaRequ
 }
 
 func (s *Server) DeleteConfigSchema(ctx context.Context, in *pb.DeleteConfigSchemaRequest) (*pb.DeleteConfigSchemaResponse, error) {
-	oortSchemaId := services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.SchemaName, in.SchemaDetails.Version)
+	oortSchemaId := services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.Namespace, in.SchemaDetails.SchemaName, in.SchemaDetails.Version)
 	if !s.authorizer.Authorize(ctx, services.PermSchemaDel, services.OortResSchema, oortSchemaId) {
 		return nil, fmt.Errorf("permission denied: %s", services.PermSchemaDel)
 	}
@@ -185,7 +196,7 @@ func (s *Server) DeleteConfigSchema(ctx context.Context, in *pb.DeleteConfigSche
 }
 
 func (s *Server) ValidateConfiguration(ctx context.Context, in *pb.ValidateConfigurationRequest) (*pb.ValidateConfigurationResponse, error) {
-	oortSchemaId := services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.SchemaName, in.SchemaDetails.Version)
+	oortSchemaId := services.OortSchemaId(in.SchemaDetails.Organization, in.SchemaDetails.Namespace, in.SchemaDetails.SchemaName, in.SchemaDetails.Version)
 	if !s.authorizer.Authorize(ctx, services.PermSchemaGet, services.OortResSchema, oortSchemaId) {
 		return nil, fmt.Errorf("permission denied: %s", services.PermSchemaGet)
 	}
@@ -264,7 +275,7 @@ func validateConfiguration(configuration string, schema string) (*gojsonschema.R
 }
 
 func (s *Server) GetConfigSchemaVersions(ctx context.Context, in *pb.ConfigSchemaVersionsRequest) (*pb.ConfigSchemaVersionsResponse, error) {
-	if !s.authorizer.Authorize(ctx, services.PermSchemaGet, services.OortResOrg, in.SchemaDetails.Organization) {
+	if !s.authorizer.Authorize(ctx, services.PermSchemaPut, services.OortResNamespace, fmt.Sprintf("%s/%s", in.SchemaDetails.Organization, in.SchemaDetails.Namespace)) {
 		return nil, fmt.Errorf("permission denied: %s", services.PermSchemaGet)
 	}
 	_, err := validators.IsGetConfigSchemaVersionsValid(in)
