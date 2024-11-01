@@ -49,6 +49,7 @@ func getConfigSchemaPrefix(req ConfigSchemaRequest) string {
 }
 
 func (s *Server) SaveConfigSchema(ctx context.Context, in *pb.SaveConfigSchemaRequest) (*pb.SaveConfigSchemaResponse, error) {
+	ctx = s.authorizer.SetOutgoingContext(ctx)
 	_, err := s.meridian.GetNamespace(ctx, &meridian_api.GetNamespaceReq{
 		OrgId: in.SchemaDetails.Organization,
 		Name:  in.SchemaDetails.Namespace,
